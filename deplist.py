@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+import sys
+from os import path, getcwd
+import argparse
+import glob
+import re
+from functools import lru_cache
+
+INCLUDE_REGEX = r"^[(%:)#][ \t]*include[ \t]*[<\"](.+)[>\"]"
+C_CPP_EXTENSIONS = "c:cc:cpp:cxx:h:hh:hpp".split(':')
+
+dependencies = dict()
+
+
+def parse_args() -> argparse.Namespace:
+  parser = argparse.ArgumentParser()
+  parser.add_argument("target", help="The file to list the depencies of")
+  parser.add_argument("root", nargs='?', default=getcwd(),
+                      help="The root directory to look for files in")
+  parser.add_argument("-I", dest="include", action="append",
+                      help="Additional include directories")
+  return parser.parse_args()
+
+
+def get_files(root: str, extensions: list) -> list:
+  files = []
+  for i in glob.glob(path.join(root, '*')):
+    if path.isfile(i) and i.split('.')[-1] in extensions:
+      files.append(path.abspath(i))
+    elif path.isdir(i):
+      files += get_files(i, extensions)
+  return files
+
+
+def include_names(target: str, file_name: str, include_dirs: list) -> list:
+  names = [
+    target,
+    path.basename(target),
+    path.relpath(target, path.dirname(file_name))
+  ]
+  for i in include_dirs:
+    names.append(path.relpath(target, i))
+  return names
+
+
+def get_includes(files: list) -> dict:
+  includes = {i: [] for i in files}
+  for file_name in files:
+    with open(file_name) as f:
+      for l in f.readlines():
+        if re.match(INCLUDE_REGEX, l):
+          includes[file_name].append(l.split("include")[1].strip()[1:-1])
+  return includes
+
+
+def get_dependencies(target: str, all_files: list, includes: dict, include_dirs: list) -> None:
+  if dependencies[target] is not None:
+    return dependencies[target]
+  else:
+    dependencies[target] = []
+    for i, f in enumerate(all_files):
+      if f == target:
+        continue
+      check_includes = include_names(target, f, include_dirs)
+      for c in check_includes:
+        if c in includes[f] and f not in dependencies[target]:
+          dependencies[target].append(f)
+          get_dependencies(f, all_files, includes, include_dirs)
+
+
+def print_dependencies(target: str, rel: str, indent: list = []) -> None:
+  for d in dependencies[target]:
+    indent_chars = "".join("    " if i else "|   " for i in indent)
+    sys.stdout.write(f"{indent_chars}`-> {path.relpath(d, rel)}\n")
+    if dependencies[d]:
+      print_dependencies(d, rel, indent + [d == dependencies[target][-1]])
+
+
+def main(args: argparse.Namespace) -> int:
+  global dependencies
+  target = path.abspath(args.target)
+  possible_dependants = get_files(args.root, C_CPP_EXTENSIONS)
+
+  include_dirs = [
+    path.dirname(args.target),
+    args.root
+  ]
+  if args.include:
+    include_dirs += args.include
+
+  includes = get_includes(possible_dependants)
+  dependencies = {f: None for f in possible_dependants}
+
+  get_dependencies(target, possible_dependants, includes, include_dirs)
+
+  sys.stdout.write(args.target + '\n')
+  print_dependencies(target, args.root)
+
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main(parse_args()))
