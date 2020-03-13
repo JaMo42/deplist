@@ -46,7 +46,6 @@ def get_includes(files: list) -> dict:
   for file_name in files:
     with open(file_name) as f:
       for l in f.readlines():
-        #if l[0] == '#' and re.match(INCLUDE_REGEX, l):
         if l[0] == '#' and l[1:].strip().startswith("include"):
           includes[file_name].append(l.split("include")[1].strip()[1:-1])
   return includes
