@@ -3,8 +3,6 @@ import sys
 from os import path, getcwd
 import argparse
 import glob
-import re
-from functools import lru_cache
 
 INCLUDE_REGEX = r"^[(%:)#][ \t]*include[ \t]*[<\"](.+)[>\"]"
 C_CPP_EXTENSIONS = "c:cc:cpp:cxx:h:hh:hpp".split(':')
@@ -48,7 +46,8 @@ def get_includes(files: list) -> dict:
   for file_name in files:
     with open(file_name) as f:
       for l in f.readlines():
-        if re.match(INCLUDE_REGEX, l):
+        #if l[0] == '#' and re.match(INCLUDE_REGEX, l):
+        if l[0] == '#' and l[1:].strip().startswith("include"):
           includes[file_name].append(l.split("include")[1].strip()[1:-1])
   return includes
 
@@ -66,6 +65,7 @@ def get_dependencies(target: str, all_files: list, includes: dict, include_dirs:
         if c in includes[f] and f not in dependencies[target]:
           dependencies[target].append(f)
           get_dependencies(f, all_files, includes, include_dirs)
+          break
 
 
 def print_dependencies(target: str, rel: str, indent: list = []) -> None:
